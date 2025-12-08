@@ -626,6 +626,93 @@ void lv_chart_set_all_values(lv_obj_t * obj, lv_chart_series_t * ser, int32_t va
     lv_chart_refresh(obj);
 }
 
+static int32_t chart_value_to_y(lv_chart_t * chart, int32_t value)
+{
+    /* Use primary Y axis values with index 0 because ymin/ymax are arrays */
+    int32_t min = chart->ymin[0];
+    int32_t max = chart->ymax[0];
+    int32_t h = lv_obj_get_height((lv_obj_t *)chart) - 1;
+
+    if(max == min) return 0; // avoid division by zero
+
+    /* Map value to pixel, 0 = top of chart */
+    int32_t y = h - ((value - min) * h) / (max - min);
+    return y;
+}
+
+void lv_chart_set_next_value_optimized(lv_obj_t * obj, lv_chart_series_t * ser, int32_t value)
+{
+    static bool firstRun = true;
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    LV_ASSERT_NULL(ser);
+
+    lv_chart_t * chart = (lv_chart_t *)obj;
+    /* Add the new value to the series array */
+    ser->y_points[ser->start_point] = value;
+    ser->start_point = (ser->start_point + 1) % chart->point_cnt;
+    if(firstRun) {
+        lv_obj_invalidate(obj);
+        firstRun = false;
+        return;
+    }
+    /* Here we go! Let's calculate minimal area to invalidate instead of the whole chart */
+    int32_t y_min = INT32_MAX;
+    int32_t y_max = 0;
+    /* Loop over all of the series points and figure out the min and max. 
+    To-Do: figure out what to do if the series isn't full. For my use-case, I set the entire series to zero before setting the next point */
+    for(uint32_t i = 1; i < chart->point_cnt; i++) {
+        int32_t val = ser->y_points[i];
+        if(val < y_min) {
+            y_min = val;
+        }
+        if(val > y_max) {
+            y_max = val;
+        }
+    }
+
+    /* Convert chart values to pixel coordinates...*/
+    uint32_t y1 = chart_value_to_y(chart, y_min);
+    uint32_t y2 = chart_value_to_y(chart, y_max);
+
+    /* Include line width and border */
+    uint32_t line_w = lv_obj_get_style_line_width(obj, LV_PART_ITEMS);
+    uint32_t point_w = lv_obj_get_style_width(obj, LV_PART_INDICATOR);
+    uint32_t border_w = lv_obj_get_style_border_width(obj, LV_PART_MAIN);
+    if(y1 > y2) {
+        uint32_t tmp = y1;
+        y1 = y2;
+        y2 = tmp;
+    }
+    y1 -= (line_w / 2) + point_w;
+    y2 += (line_w / 2) + point_w;
+
+    if(y_min > y_max) {
+        uint32_t tmp = y1;
+        y1 = y2;
+        y2 = tmp;
+    }
+    y1 -= line_w + point_w + border_w; // expand slightly to fully cover line thickness and any other borders
+    y2 += line_w + point_w + border_w;
+
+    /* Horizontal slice of the full chart width */
+    lv_area_t inv_area;
+    inv_area.x1 = 0;
+    inv_area.x2 = lv_obj_get_width(obj) - 1;
+    inv_area.y1 = y1;
+    inv_area.y2 = y2;
+
+    uint32_t obj_x = lv_obj_get_x(obj);     // chart's x offset from parent
+    uint32_t obj_y = lv_obj_get_y(obj);     // chart's y offset from parent
+
+    inv_area.x1 += obj_x;
+    inv_area.x2 += obj_x;
+    inv_area.y1 += obj_y;
+    inv_area.y2 += obj_y;
+
+    /* Invalidate only the minimal area */
+    lv_obj_invalidate_area(obj, &inv_area);
+    
+}
 
 void lv_chart_set_next_value(lv_obj_t * obj, lv_chart_series_t * ser, int32_t value)
 {
@@ -633,6 +720,11 @@ void lv_chart_set_next_value(lv_obj_t * obj, lv_chart_series_t * ser, int32_t va
     LV_ASSERT_NULL(ser);
 
     lv_chart_t * chart  = (lv_chart_t *)obj;
+
+    if(chart->update_mode == LV_CHART_UPDATE_MODE_SHIFT) {
+        lv_chart_set_next_value_optimized(obj);
+        return;
+    }
 
     ser->y_points[ser->start_point] = value;
     invalidate_point(obj, ser->start_point);

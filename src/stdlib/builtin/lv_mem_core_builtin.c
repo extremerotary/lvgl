@@ -6,6 +6,7 @@
  *      INCLUDES
  *********************/
 #include "../lv_mem.h"
+#include "esp_heap_caps.h" // For ESP-IDF's PSRAM allocation functions
 #if LV_USE_STDLIB_MALLOC == LV_STDLIB_BUILTIN
 
 #include "lv_tlsf.h"
@@ -70,41 +71,12 @@ static void lv_mem_walker(void * ptr, size_t size, int used, void * user);
 
 void lv_mem_init(void)
 {
-#if LV_USE_OS
-    lv_mutex_init(&state.mutex);
-#endif
-
-#if LV_MEM_ADR == 0
-#ifdef LV_MEM_POOL_ALLOC
-    state.tlsf = lv_tlsf_create_with_pool((void *)LV_MEM_POOL_ALLOC(LV_MEM_SIZE), LV_MEM_SIZE);
-#else
-    /*Allocate a large array to store the dynamically allocated data*/
-    static MEM_UNIT work_mem_int[LV_MEM_SIZE / sizeof(MEM_UNIT)] LV_ATTRIBUTE_LARGE_RAM_ARRAY;
-    state.tlsf = lv_tlsf_create_with_pool((void *)work_mem_int, LV_MEM_SIZE);
-#endif
-#else
-    state.tlsf = lv_tlsf_create_with_pool((void *)LV_MEM_ADR, LV_MEM_SIZE);
-#endif
-
-    lv_ll_init(&state.pool_ll, sizeof(lv_pool_t));
-
-    /*Record the first pool*/
-    lv_pool_t * pool_p = lv_ll_ins_tail(&state.pool_ll);
-    LV_ASSERT_MALLOC(pool_p);
-    *pool_p = lv_tlsf_get_pool(state.tlsf);
-
-#if LV_MEM_ADD_JUNK
-    LV_LOG_WARN("LV_MEM_ADD_JUNK is enabled which makes LVGL much slower");
-#endif
+    return;
 }
 
 void lv_mem_deinit(void)
 {
-    lv_ll_clear(&state.pool_ll);
-    lv_tlsf_destroy(state.tlsf);
-#if LV_USE_OS
-    lv_mutex_delete(&state.mutex);
-#endif
+    return;
 }
 
 lv_mem_pool_t lv_mem_add_pool(void * mem, size_t bytes)
@@ -138,60 +110,17 @@ void lv_mem_remove_pool(lv_mem_pool_t pool)
 
 void * lv_malloc_core(size_t size)
 {
-#if LV_USE_OS
-    lv_mutex_lock(&state.mutex);
-#endif
-    void * p = lv_tlsf_malloc(state.tlsf, size);
-
-    if(p) {
-        state.cur_used += lv_tlsf_block_size(p);
-        state.max_used = LV_MAX(state.cur_used, state.max_used);
-    }
-
-#if LV_USE_OS
-    lv_mutex_unlock(&state.mutex);
-#endif
-    return p;
+return heap_caps_malloc(size, MALLOC_CAP_SPIRAM); // Allocate in PSRAM
 }
 
 void * lv_realloc_core(void * p, size_t new_size)
 {
-#if LV_USE_OS
-    lv_mutex_lock(&state.mutex);
-#endif
-
-    size_t old_size = lv_tlsf_block_size(p);
-    void * p_new = lv_tlsf_realloc(state.tlsf, p, new_size);
-
-    if(p_new) {
-        state.cur_used -= old_size;
-        state.cur_used += lv_tlsf_block_size(p_new);
-        state.max_used = LV_MAX(state.cur_used, state.max_used);
-    }
-#if LV_USE_OS
-    lv_mutex_unlock(&state.mutex);
-#endif
-
-    return p_new;
+return heap_caps_realloc(p, new_size, MALLOC_CAP_SPIRAM); // Reallocate in PSRAM
 }
 
 void lv_free_core(void * p)
 {
-#if LV_USE_OS
-    lv_mutex_lock(&state.mutex);
-#endif
-
-#if LV_MEM_ADD_JUNK
-    lv_memset(p, 0xbb, lv_tlsf_block_size(data));
-#endif
-    size_t size = lv_tlsf_block_size(p);
-    lv_tlsf_free(state.tlsf, p);
-    if(state.cur_used > size) state.cur_used -= size;
-    else state.cur_used = 0;
-
-#if LV_USE_OS
-    lv_mutex_unlock(&state.mutex);
-#endif
+heap_caps_free(p); // Free from PSRAM
 }
 
 void lv_mem_monitor_core(lv_mem_monitor_t * mon_p)

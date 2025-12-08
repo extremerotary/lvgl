@@ -6,7 +6,7 @@
  *      INCLUDES
  *********************/
 #include "../lv_mem.h"
-#include "esp_heap_caps.h" // For ESP-IDF's PSRAM allocation functions
+#include "esp_heap_caps.h"
 #if LV_USE_STDLIB_MALLOC == LV_STDLIB_BUILTIN
 
 #include "lv_tlsf.h"
@@ -71,7 +71,32 @@ static void lv_mem_walker(void * ptr, size_t size, int used, void * user);
 
 void lv_mem_init(void)
 {
-    return;
+#if LV_USE_OS
+    lv_mutex_init(&state.mutex);
+#endif
+
+#if LV_MEM_ADR == 0
+#ifdef LV_MEM_POOL_ALLOC
+    state.tlsf = lv_tlsf_create_with_pool((void *)LV_MEM_POOL_ALLOC(LV_MEM_SIZE), LV_MEM_SIZE);
+#else
+    /*Allocate a large array to store the dynamically allocated data*/
+    static MEM_UNIT work_mem_int[LV_MEM_SIZE / sizeof(MEM_UNIT)] LV_ATTRIBUTE_LARGE_RAM_ARRAY;
+    state.tlsf = lv_tlsf_create_with_pool((void *)work_mem_int, LV_MEM_SIZE);
+#endif
+#else
+    state.tlsf = lv_tlsf_create_with_pool((void *)LV_MEM_ADR, LV_MEM_SIZE);
+#endif
+
+    lv_ll_init(&state.pool_ll, sizeof(lv_pool_t));
+
+    /*Record the first pool*/
+    lv_pool_t * pool_p = lv_ll_ins_tail(&state.pool_ll);
+    LV_ASSERT_MALLOC(pool_p);
+    *pool_p = lv_tlsf_get_pool(state.tlsf);
+
+#if LV_MEM_ADD_JUNK
+    LV_LOG_WARN("LV_MEM_ADD_JUNK is enabled which makes LVGL much slower");
+#endif
 }
 
 void lv_mem_deinit(void)
@@ -108,19 +133,16 @@ void lv_mem_remove_pool(lv_mem_pool_t pool)
     LV_LOG_WARN("invalid pool: %p", pool);
 }
 
-void * lv_malloc_core(size_t size)
-{
-return heap_caps_malloc(size, MALLOC_CAP_SPIRAM); // Allocate in PSRAM
+void * lv_malloc_core(size_t size) {
+    return heap_caps_malloc(size, MALLOC_CAP_SPIRAM); // Allocate in PSRAM
 }
 
-void * lv_realloc_core(void * p, size_t new_size)
-{
-return heap_caps_realloc(p, new_size, MALLOC_CAP_SPIRAM); // Reallocate in PSRAM
+void * lv_realloc_core(void * ptr, size_t size) {
+    return heap_caps_realloc(ptr, size, MALLOC_CAP_SPIRAM); // Reallocate in PSRAM
 }
 
-void lv_free_core(void * p)
-{
-heap_caps_free(p); // Free from PSRAM
+void lv_free_core(void * ptr) {
+    heap_caps_free(ptr); // Free from PSRAM
 }
 
 void lv_mem_monitor_core(lv_mem_monitor_t * mon_p)

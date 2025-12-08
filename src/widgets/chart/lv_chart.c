@@ -722,7 +722,7 @@ void lv_chart_set_next_value(lv_obj_t * obj, lv_chart_series_t * ser, int32_t va
     lv_chart_t * chart  = (lv_chart_t *)obj;
 
     if(chart->update_mode == LV_CHART_UPDATE_MODE_SHIFT) {
-        lv_chart_set_next_value_optimized(obj);
+        lv_chart_set_next_value_optimized(obj, ser, value);
         return;
     }
 

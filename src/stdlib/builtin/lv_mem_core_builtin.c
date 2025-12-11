@@ -101,7 +101,11 @@ void lv_mem_init(void)
 
 void lv_mem_deinit(void)
 {
-    return;
+    lv_ll_clear(&state.pool_ll);
+    lv_tlsf_destroy(state.tlsf);
+#if LV_USE_OS
+    lv_mutex_delete(&state.mutex);
+#endif
 }
 
 lv_mem_pool_t lv_mem_add_pool(void * mem, size_t bytes)

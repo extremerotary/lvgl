@@ -344,6 +344,155 @@ void lv_scale_update_horizontal_needle(lv_obj_t * scale, lv_obj_t * needle_line,
 
     lv_line_set_points_mutable(needle_line, pts, 2);
 }
+#include <math.h>
+#define M_PI 3.14159265358979323846
+
+static inline float clampf(float v, float lo, float hi) {
+    return (v < lo) ? lo : (v > hi) ? hi : v;
+}
+
+void lv_scale_set_line_needle_value_f(lv_obj_t * obj,
+                                      lv_obj_t * needle_line,
+                                      int32_t needle_length,
+                                      float value_f)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_scale_t * scale = (lv_scale_t *)obj;
+
+    // Keep existing behavior for horizontal/vertical (those funcs are int-based in LVGL)
+    // If you want float for those too, we can do similar mapping and call line setters.
+    if((scale->mode == LV_SCALE_MODE_HORIZONTAL_TOP) ||
+       (scale->mode == LV_SCALE_MODE_HORIZONTAL_BOTTOM)) {
+        // Map float to int domain for existing function (still smoother if your domain is scaled up)
+        lv_scale_update_horizontal_needle(obj, needle_line, needle_length, (int32_t)lroundf(value_f));
+        return;
+    }
+
+    if((scale->mode == LV_SCALE_MODE_VERTICAL_LEFT) ||
+       (scale->mode == LV_SCALE_MODE_VERTICAL_RIGHT)) {
+        lv_scale_update_vertical_needle(obj, needle_line, needle_length, (int32_t)lroundf(value_f));
+        return;
+    }
+
+    if((scale->mode != LV_SCALE_MODE_ROUND_INNER) &&
+       (scale->mode != LV_SCALE_MODE_ROUND_OUTER)) {
+        return;
+    }
+
+    /* Get scale size and center (local coords) */
+    int32_t scale_w = lv_obj_get_style_width(obj, LV_PART_MAIN);
+    int32_t scale_h = lv_obj_get_style_height(obj, LV_PART_MAIN);
+    if(scale_w != scale_h) return;
+
+    const float cx_f = (float)scale_w * 0.5f;
+    const float cy_f = (float)scale_h * 0.5f;
+
+    /* Clamp needle length to [0, scale/2] (same logic as your original) */
+    int32_t max_len = scale_w / 2;
+    int32_t actual_len = needle_length;
+    if(actual_len >= max_len) {
+        actual_len = max_len;
+    }
+    else if(actual_len < 0) {
+        if(needle_length + max_len < 0) actual_len = 0;
+        else actual_len = max_len + needle_length;
+    }
+
+    /* Compute angle in float for smooth interpolation */
+    const float rmin = (float)scale->range_min;
+    const float rmax = (float)scale->range_max;
+    const float span = rmax - rmin;
+
+    float t = 0.0f; // 0..1
+    if(span > 0.0f) {
+        // clamp value into range
+        float v = clampf(value_f, rmin, rmax);
+        t = (v - rmin) / span;
+    }
+
+    // LVGL uses degrees in its rotation/angle_range.
+    const float angle_deg = t * (float)scale->angle_range;
+    const float final_deg = (float)scale->rotation + angle_deg;
+
+    // Convert to radians for cosf/sinf
+    const float rad = final_deg * (float)(M_PI / 180.0);
+
+    /* Endpoint offsets from center (float trig) */
+    const float dx_f = (float)actual_len * cosf(rad);
+    const float dy_f = (float)actual_len * sinf(rad);
+
+    const float ex_f = cx_f + dx_f;
+    const float ey_f = cy_f + dy_f;
+
+    // Round to integer pixels for LVGL geometry
+    const int32_t cx = (int32_t)lroundf(cx_f);
+    const int32_t cy = (int32_t)lroundf(cy_f);
+    const int32_t ex = (int32_t)lroundf(ex_f);
+    const int32_t ey = (int32_t)lroundf(ey_f);
+
+    /* Build minimal AABB containing center+endpoint.
+       Increase PAD a bit to account for rounding + line width + AA. */
+    const int32_t line_w = lv_obj_get_style_line_width(needle_line, LV_PART_MAIN);
+    const int32_t aa_pad = 2;
+    const int32_t PAD = (line_w / 2) + aa_pad;
+
+    int32_t minx = LV_MIN(cx, ex) - PAD;
+    int32_t miny = LV_MIN(cy, ey) - PAD;
+    int32_t maxx = LV_MAX(cx, ex) + PAD;
+    int32_t maxy = LV_MAX(cy, ey) + PAD;
+
+    /* Clamp to scale bounds */
+    if(minx < 0) minx = 0;
+    if(miny < 0) miny = 0;
+    if(maxx > scale_w - 1) maxx = scale_w - 1;
+    if(maxy > scale_h - 1) maxy = scale_h - 1;
+
+    int32_t box_w = maxx - minx + 1;
+    int32_t box_h = maxy - miny + 1;
+    if(box_w <= 0) box_w = 2;
+    if(box_h <= 0) box_h = 2;
+
+    lv_obj_set_pos(needle_line, minx, miny);
+    lv_obj_set_size(needle_line, box_w, box_h);
+
+    /* Get or allocate mutable points buffer (2 points) */
+    lv_point_precise_t * pts = NULL;
+    if(lv_line_is_point_array_mutable(needle_line) && lv_line_get_point_count(needle_line) >= 2) {
+        pts = lv_line_get_points_mutable(needle_line);
+    }
+    else {
+        uint32_t ev_cnt = lv_obj_get_event_count(needle_line);
+        for(int32_t i = (int32_t)ev_cnt - 1; i >= 0; i--) {
+            lv_event_dsc_t * dsc = lv_obj_get_event_dsc(needle_line, (uint32_t)i);
+            if(dsc && lv_event_dsc_get_cb(dsc) == scale_free_line_needle_points_cb) {
+                pts = (lv_point_precise_t *)lv_event_dsc_get_user_data(dsc);
+                break;
+            }
+        }
+    }
+
+    if(pts == NULL) {
+        // Use LVGL allocators for consistency with LVGL config
+        pts = (lv_point_precise_t *)lv_malloc(sizeof(lv_point_precise_t) * 2);
+        LV_ASSERT_MALLOC(pts);
+        if(pts == NULL) return;
+        lv_obj_add_event_cb(needle_line, scale_free_line_needle_points_cb, LV_EVENT_DELETE, pts);
+        lv_line_set_points_mutable(needle_line, pts, 2);
+    }
+
+    /* Convert center and endpoint to coords relative to AABB origin */
+    const int32_t rel_cx = cx - minx;
+    const int32_t rel_cy = cy - miny;
+    const int32_t rel_ex = ex - minx;
+    const int32_t rel_ey = ey - miny;
+
+    pts[0].x = rel_cx;
+    pts[0].y = rel_cy;
+    pts[1].x = rel_ex;
+    pts[1].y = rel_ey;
+
+    lv_line_set_points_mutable(needle_line, pts, 2);
+}
 
 void lv_scale_set_line_needle_value(lv_obj_t * obj, lv_obj_t * needle_line, int32_t needle_length, int32_t value)
 {
@@ -367,14 +516,14 @@ void lv_scale_set_line_needle_value(lv_obj_t * obj, lv_obj_t * needle_line, int3
         return;
     }
 
-    /* Get scale size and center (local coords) */
+
     int32_t scale_w = lv_obj_get_style_width(obj, LV_PART_MAIN);
     int32_t scale_h = lv_obj_get_style_height(obj, LV_PART_MAIN);
     if(scale_w != scale_h) return;
     int32_t cx = scale_w / 2;
     int32_t cy = scale_h / 2;
 
-    /* Clamp needle length to [0, scale/2] */
+
     int32_t max_len = scale_w / 2;
     int32_t actual_len = needle_length;
     if(actual_len >= max_len) {
@@ -387,7 +536,7 @@ void lv_scale_set_line_needle_value(lv_obj_t * obj, lv_obj_t * needle_line, int3
         else actual_len = max_len + needle_length;
     }
 
-    /* Compute angle for value (guard division-by-zero) */
+
     int32_t angle = 0;
     int32_t range_span = scale->range_max - scale->range_min;
     if(range_span > 0) {
@@ -404,23 +553,22 @@ void lv_scale_set_line_needle_value(lv_obj_t * obj, lv_obj_t * needle_line, int3
 
     int32_t final_angle = scale->rotation + angle;
 
-    /* Endpoint offsets from center (fixed-point trig) */
+
     int32_t dx = (actual_len * lv_trigo_cos(final_angle)) >> LV_TRIGO_SHIFT;
     int32_t dy = (actual_len * lv_trigo_sin(final_angle)) >> LV_TRIGO_SHIFT;
 
-    /* Endpoint in scale's local coords */
+
     int32_t ex = cx + dx;
     int32_t ey = cy + dy;
 
-    /* Build minimal axis-aligned bounding box that contains center and endpoint.
-       Add padding for line width / AA to avoid clipping/tearing. */
-    const int PAD = 2; /* Not 100% on this; maybe you get it from get style padding? Hard-coding for now */
+
+    const int PAD = 2; 
     int32_t minx = LV_MIN(cx, ex) - PAD;
     int32_t miny = LV_MIN(cy, ey) - PAD;
     int32_t maxx = LV_MAX(cx, ex) + PAD;
     int32_t maxy = LV_MAX(cy, ey) + PAD;
 
-    /* Clamp to parent (personal preference) */
+
     if(minx < 0) minx = 0;
     if(miny < 0) miny = 0;
     if(maxx > scale_w - 1) maxx = scale_w - 1;
@@ -431,17 +579,17 @@ void lv_scale_set_line_needle_value(lv_obj_t * obj, lv_obj_t * needle_line, int3
     if(box_w <= 0) box_w = 2;
     if(box_h <= 0) box_h = 2;
 
-    /* Move/resize the needle_line object to the computed coordinates relative to the scale coordinates */
+
     lv_obj_set_pos(needle_line, minx, miny);
     lv_obj_set_size(needle_line, box_w, box_h);
 
-    /* Get or allocate mutable points buffer (2 points) */
+
     lv_point_precise_t * pts = NULL;
     if(lv_line_is_point_array_mutable(needle_line) && lv_line_get_point_count(needle_line) >= 2) {
         pts = lv_line_get_points_mutable(needle_line);
     }
     else {
-        /* Look for previously attached buffer (iterate forwards or backwards depemding) */
+
         uint32_t ev_cnt = lv_obj_get_event_count(needle_line);
         for(int32_t i = (int32_t)ev_cnt - 1; i >= 0; i--) {
             lv_event_dsc_t * dsc = lv_obj_get_event_dsc(needle_line, (uint32_t)i);
@@ -460,7 +608,7 @@ void lv_scale_set_line_needle_value(lv_obj_t * obj, lv_obj_t * needle_line, int3
         lv_line_set_points_mutable(needle_line, pts, 2);
     }
 
-    /* Convert center and endpoint to coordinates *relative to the AABB origin* */
+
     int32_t rel_cx = cx - minx;
     int32_t rel_cy = cy - miny;
     int32_t rel_ex = ex - minx;

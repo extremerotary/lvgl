@@ -20,7 +20,7 @@ extern "C" {
 #include "../../core/lv_obj.h"
 #include "../line/lv_line.h"
 #include "../image/lv_image.h"
-#include "../../core/lv_observer.h"
+#include "../../others/observer/lv_observer.h"
 
 /*********************
  *      DEFINES
@@ -51,7 +51,7 @@ typedef enum {
     LV_SCALE_MODE_VERTICAL_LEFT     = 0x02U,
     LV_SCALE_MODE_VERTICAL_RIGHT    = 0x04U,
     LV_SCALE_MODE_ROUND_INNER       = 0x08U,
-    LV_SCALE_MODE_ROUND_OUTER      = 0x10U,
+    LV_SCALE_MODE_ROUND_OUTER       = 0x10U,
     LV_SCALE_MODE_LAST
 } lv_scale_mode_t;
 
@@ -150,47 +150,8 @@ void lv_scale_set_angle_range(lv_obj_t * obj, uint32_t angle_range);
  * @param rotation  clockwise angular offset (in degrees) from the 3-o'clock position
  *                  of the low end of the scale; negative and >360 values are first normalized
  *                  to range [0..360].
- *                  Examples:
- *                      -   0 = 3 o'clock (right side)
- *                      -  30 = 4 o'clock
- *                      -  60 = 5 o'clock
- *                      -  90 = 6 o'clock
- *                      - 135 = midway between 7 and 8 o'clock (default)
- *                      - 180 = 9 o'clock
- *                      - 270 = 12 o'clock
- *                      - 300 = 1 o'clock
- *                      - 330 = 2 o'clock
- *                      - -30 = 2 o'clock
- *                      - 390 = 4 o'clock
  */
 void lv_scale_set_rotation(lv_obj_t * obj, int32_t rotation);
-
-
-/**
- * Point line needle to specified value.
- * @param scale            pointer to Scale Widget
- * @param needle_line      needle_line of the Scale. The line points will be allocated and
- *                         managed by the Scale unless the line point array was previously set
- *                         using `lv_line_set_points_mutable`.
- * @param needle_length    length of the needle
- *                         - needle_length>0: needle_length=needle_length;
- * @param value            Scale value needle will point to
- */
-void lv_scale_update_horizontal_needle(lv_obj_t * scale, lv_obj_t * needle_line,
-                                       int32_t needle_length, int32_t value);
-
-/**
- * Point line needle to specified value.
- * @param scale            pointer to Scale Widget
- * @param needle_line      needle_line of the Scale. The line points will be allocated and
- *                         managed by the Scale unless the line point array was previously set
- *                         using `lv_line_set_points_mutable`.
- * @param needle_length    length of the needle
- *                         - needle_length>0: needle_length=needle_length;
- * @param value            Scale value needle will point to
- */
-void lv_scale_update_vertical_needle(lv_obj_t * scale, lv_obj_t * needle_line,
-                                     int32_t needle_length, int32_t value);
 
 /**
  * Point line needle to specified value.
@@ -205,6 +166,11 @@ void lv_scale_update_vertical_needle(lv_obj_t * scale, lv_obj_t * needle_line,
  */
 void lv_scale_set_line_needle_value(lv_obj_t * obj, lv_obj_t * needle_line, int32_t needle_length,
                                     int32_t value);
+
+void lv_scale_set_line_needle_value_f(lv_obj_t * obj,
+                                      lv_obj_t * needle_line,
+                                      int32_t needle_length,
+                                      float value_f);
 
 /**
  * Point image needle to specified value;
@@ -247,129 +213,29 @@ lv_scale_section_t * lv_scale_add_section(lv_obj_t * obj);
 
 /**
  * DEPRECATED, use lv_scale_set_section_range instead.
- * Set range for specified Scale Section
- * @param section       pointer to Section
- * @param range_min     Section new minimum value
- * @param range_max     Section new maximum value
  */
 void lv_scale_section_set_range(lv_scale_section_t * section, int32_t min, int32_t max);
 
-/**
- * Set the range of a scale section
- * @param scale         pointer to scale
- * @param section       pointer to section
- * @param range_min     the section's new minimum value
- * @param range_max     the section's new maximum value
- */
 void lv_scale_set_section_range(lv_obj_t * scale, lv_scale_section_t * section, int32_t min, int32_t max);
-
-/**
- * Set the minimum value of a scale section
- * @param scale         pointer to scale
- * @param section       pointer to section
- * @param min           the section's new minimum value
- */
 void lv_scale_set_section_min_value(lv_obj_t * scale, lv_scale_section_t * section, int32_t min);
-
-/**
- * Set the maximum value of a scale section
- * @param scale         pointer to scale
- * @param section       pointer to section
- * @param max           the section's new maximum value
- */
 void lv_scale_set_section_max_value(lv_obj_t * scale, lv_scale_section_t * section, int32_t max);
 
-/**
- * DEPRECATED, use lv_scale_set_section_style_main/indicator/items instead.
- * Set style for specified part of Section.
- * @param section             pointer to Section
- * @param part                the part of the Scale the style will apply to, e.g. LV_PART_INDICATOR
- * @param section_part_style  pointer to style to apply
- */
 void lv_scale_section_set_style(lv_scale_section_t * section, lv_part_t part, lv_style_t * section_part_style);
-
-/**
- * Set the style of the line on a section.
- * @param scale         pointer to scale
- * @param section       pointer to section
- * @param style         point to a style
- */
 void lv_scale_set_section_style_main(lv_obj_t * scale, lv_scale_section_t * section, const lv_style_t * style);
-
-/**
- * Set the style of the major ticks and label on a section.
- * @param scale         pointer to scale
- * @param section       pointer to section
- * @param style         point to a style
- */
 void lv_scale_set_section_style_indicator(lv_obj_t * scale, lv_scale_section_t * section, const lv_style_t * style);
-
-/**
- * Set the style of the minor ticks on a section.
- * @param scale         pointer to scale
- * @param section       pointer to section
- * @param style         point to a style
- */
 void lv_scale_set_section_style_items(lv_obj_t * scale, lv_scale_section_t * section, const lv_style_t * style);
 
 /*=====================
  * Getter functions
  *====================*/
 
-/**
- * Get scale mode. See lv_scale_mode_t
- * @param obj   pointer to Scale Widget
- * @return      Scale mode
- */
 lv_scale_mode_t lv_scale_get_mode(lv_obj_t * obj);
-
-/**
- * Get scale total tick count (including minor and major ticks)
- * @param obj   pointer to Scale Widget
- * @return      Scale total tick count
- */
 int32_t lv_scale_get_total_tick_count(lv_obj_t * obj);
-
-/**
- * Get how often the major tick will be drawn
- * @param obj   pointer to Scale Widget
- * @return      Scale major tick every count
- */
 int32_t lv_scale_get_major_tick_every(lv_obj_t * obj);
-
-/**
- * Get angular location of low end of Scale.
- * @param obj   pointer to Scale Widget
- * @return      Scale low end angular location
- */
 int32_t lv_scale_get_rotation(lv_obj_t * obj);
-
-/**
- * Gets label visibility
- * @param obj   pointer to Scale Widget
- * @return      true if tick label is enabled, false otherwise
- */
 bool lv_scale_get_label_show(lv_obj_t * obj);
-
-/**
- * Get Scale's range in degrees
- * @param obj   pointer to Scale Widget
- * @return      Scale's angle_range
- */
 uint32_t lv_scale_get_angle_range(lv_obj_t * obj);
-
-/**
- * Get minimum value for Scale
- * @param obj   pointer to Scale Widget
- * @return      Scale's minimum value
- */
 int32_t lv_scale_get_range_min_value(lv_obj_t * obj);
-
-/**
- * Get maximum value for Scale
- * @param obj   pointer to Scale Widget
- * @return      Scale's maximum value
- */
 int32_t lv_scale_get_range_max_value(lv_obj_t * obj);
 
 /*=====================
@@ -377,25 +243,8 @@ int32_t lv_scale_get_range_max_value(lv_obj_t * obj);
  *====================*/
 
 #if LV_USE_OBSERVER
-
-/**
- * Bind an integer subject to a scales section minimum value
- * @param obj       pointer to a Scale
- * @param section   pointer to a Scale section
- * @param subject   pointer to a Subject
- * @return          pointer to newly-created Observer
- */
 lv_observer_t * lv_scale_bind_section_min_value(lv_obj_t * obj, lv_scale_section_t * section, lv_subject_t * subject);
-
-/**
- * Bind an integer subject to a scales section maximum value
- * @param obj       pointer to an Scale
- * @param section   pointer to a Scale section
- * @param subject   pointer to a Subject
- * @return          pointer to newly-created Observer
- */
 lv_observer_t * lv_scale_bind_section_max_value(lv_obj_t * obj, lv_scale_section_t * section, lv_subject_t * subject);
-
 #endif
 
 /**********************

@@ -62,6 +62,12 @@ typedef enum {
 
 LV_ATTRIBUTE_EXTERN_DATA extern const lv_obj_class_t lv_chart_class;
 
+typedef struct {
+    int32_t min_v;
+    int32_t max_v;
+    bool valid;
+} chart_range_cache_t;
+
 /**********************
  * GLOBAL PROTOTYPES
  **********************/
@@ -320,7 +326,14 @@ void lv_chart_set_all_values(lv_obj_t * obj, lv_chart_series_t * ser, int32_t va
  * @param value     the new value of the next data
  */
 void lv_chart_set_next_value(lv_obj_t * obj, lv_chart_series_t * ser, int32_t value);
-
+void lv_chart_set_next_value_optimized(lv_obj_t * obj,
+                                       lv_chart_series_t * ser,
+                                       int32_t value,
+                                       chart_range_cache_t * cache);
+void lv_chart_series_get_min_max(lv_obj_t * obj,
+                                        lv_chart_series_t * ser,
+                                        int32_t * out_min,
+                                        int32_t * out_max);
 /**
  * Set the next point's X and Y value according to the update mode policy.
  * @param obj       pointer to chart object

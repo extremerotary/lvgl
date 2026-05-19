@@ -426,7 +426,11 @@ void lv_scale_set_line_needle_value_f(lv_obj_t * obj,
 
     const int32_t line_w = lv_obj_get_style_line_width(needle_line, LV_PART_MAIN);
     const int32_t aa_pad = 2;
-    const int32_t PAD = (line_w / 2) + aa_pad;
+    int32_t PAD = (line_w / 2) + aa_pad;
+    if(scale->mode == LV_SCALE_MODE_ROUND_OUTER) {
+        int32_t arc_w = lv_obj_get_style_arc_width(obj, LV_PART_MAIN);
+        if(arc_w > 0) PAD += arc_w;
+    }
 
     int32_t minx = LV_MIN(cx, ex) - PAD;
     int32_t miny = LV_MIN(cy, ey) - PAD;
@@ -534,7 +538,13 @@ void lv_scale_set_line_needle_value(lv_obj_t * obj, lv_obj_t * needle_line, int3
     int32_t ex = cx + dx;
     int32_t ey = cy + dy;
 
-    const int PAD = 2;
+    const int32_t line_w = lv_obj_get_style_line_width(needle_line, LV_PART_MAIN);
+    const int32_t aa_pad = 2;
+    int32_t PAD = (line_w / 2) + aa_pad;
+    if(scale->mode == LV_SCALE_MODE_ROUND_OUTER) {
+        int32_t arc_w = lv_obj_get_style_arc_width(obj, LV_PART_MAIN);
+        if(arc_w > 0) PAD += arc_w;
+    }
     int32_t minx = LV_MIN(cx, ex) - PAD;
     int32_t miny = LV_MIN(cy, ey) - PAD;
     int32_t maxx = LV_MAX(cx, ex) + PAD;

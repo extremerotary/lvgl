@@ -1072,7 +1072,7 @@ static int32_t scale_get_computed_ext_draw(lv_obj_t * obj)
     ext += 4;
 
     if(ext < 4) ext = 4;
-    if(ext > 48) ext = 48;
+    if(ext > 160) ext = 160;
 
     scale->cached_ext_draw = ext;
     scale->ext_draw_dirty = false;

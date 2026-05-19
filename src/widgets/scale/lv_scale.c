@@ -71,6 +71,7 @@ static void scale_ensure_tick_geom_cache(lv_obj_t * obj);
 static bool scale_clip_hits_visible_content(lv_obj_t * obj, lv_event_t * event);
 static int32_t scale_get_computed_ext_draw(lv_obj_t * obj);
 static bool area_fully_inside_circle(const lv_area_t * a, const lv_point_t * c, int32_t r);
+static int32_t scale_get_inner_visible_radius(lv_obj_t * obj);
 
 /* Helpers */
 static void scale_find_section_tick_idx(lv_obj_t * obj);
@@ -426,11 +427,7 @@ void lv_scale_set_line_needle_value_f(lv_obj_t * obj,
 
     const int32_t line_w = lv_obj_get_style_line_width(needle_line, LV_PART_MAIN);
     const int32_t aa_pad = 2;
-    int32_t PAD = (line_w / 2) + aa_pad;
-    if(scale->mode == LV_SCALE_MODE_ROUND_OUTER) {
-        int32_t arc_w = lv_obj_get_style_arc_width(obj, LV_PART_MAIN);
-        if(arc_w > 0) PAD += arc_w;
-    }
+    const int32_t PAD = (line_w / 2) + aa_pad;
 
     int32_t minx = LV_MIN(cx, ex) - PAD;
     int32_t miny = LV_MIN(cy, ey) - PAD;
@@ -538,13 +535,7 @@ void lv_scale_set_line_needle_value(lv_obj_t * obj, lv_obj_t * needle_line, int3
     int32_t ex = cx + dx;
     int32_t ey = cy + dy;
 
-    const int32_t line_w = lv_obj_get_style_line_width(needle_line, LV_PART_MAIN);
-    const int32_t aa_pad = 2;
-    int32_t PAD = (line_w / 2) + aa_pad;
-    if(scale->mode == LV_SCALE_MODE_ROUND_OUTER) {
-        int32_t arc_w = lv_obj_get_style_arc_width(obj, LV_PART_MAIN);
-        if(arc_w > 0) PAD += arc_w;
-    }
+    const int PAD = 2;
     int32_t minx = LV_MIN(cx, ex) - PAD;
     int32_t miny = LV_MIN(cy, ey) - PAD;
     int32_t maxx = LV_MAX(cx, ex) + PAD;
@@ -907,6 +898,66 @@ static void lv_scale_destructor(const lv_obj_class_t * class_p, lv_obj_t * obj)
     LV_TRACE_OBJ_CREATE("finished");
 }
 
+static int32_t scale_get_inner_visible_radius(lv_obj_t * obj)
+{
+    lv_scale_t * scale = (lv_scale_t *)obj;
+
+    scale_ensure_tick_geom_cache(obj);
+
+    int32_t main_line_width = lv_obj_get_style_line_width(obj, LV_PART_MAIN);
+    int32_t main_arc_width = lv_obj_get_style_arc_width(obj, LV_PART_MAIN);
+    int32_t minor_tick_len = lv_obj_get_style_length(obj, LV_PART_ITEMS);
+    int32_t major_tick_len = lv_obj_get_style_length(obj, LV_PART_INDICATOR);
+
+    int32_t minor_radial_ofs = lv_obj_get_style_radial_offset(obj, LV_PART_ITEMS);
+    int32_t major_radial_ofs = lv_obj_get_style_radial_offset(obj, LV_PART_INDICATOR);
+
+    int32_t translate_x = LV_ABS(lv_obj_get_style_translate_x(obj, LV_PART_INDICATOR));
+    int32_t translate_y = LV_ABS(lv_obj_get_style_translate_y(obj, LV_PART_INDICATOR));
+    int32_t label_translate = LV_MAX(translate_x, translate_y);
+
+    int32_t radial_translate = LV_ABS(lv_obj_get_style_translate_radial(obj, LV_PART_INDICATOR));
+    int32_t label_gap = lv_obj_get_style_pad_radial(obj, LV_PART_INDICATOR) + LV_SCALE_DEFAULT_LABEL_GAP;
+
+    const lv_font_t * font = lv_obj_get_style_text_font(obj, LV_PART_INDICATOR);
+    int32_t font_h = font ? lv_font_get_line_height(font) : 0;
+    int32_t letter_space = lv_obj_get_style_text_letter_space(obj, LV_PART_INDICATOR);
+
+    int32_t safety = LV_MAX(main_line_width, 2) + 4;
+
+    /* Start from the inner edge of the main arc band */
+    int32_t inner_r = scale->cached_arc_r - main_line_width;
+
+    if(scale->mode == LV_SCALE_MODE_ROUND_INNER) {
+        int32_t tick_inner_minor = scale->cached_arc_r - main_line_width - minor_radial_ofs - minor_tick_len;
+        int32_t tick_inner_major = scale->cached_arc_r - main_line_width - major_radial_ofs - major_tick_len;
+
+        int32_t label_inner = scale->cached_arc_r
+                              - main_line_width
+                              - major_radial_ofs
+                              - major_tick_len
+                              - radial_translate
+                              - label_gap
+                              - font_h
+                              - letter_space
+                              - label_translate;
+
+        inner_r = tick_inner_minor;
+        if(tick_inner_major < inner_r) inner_r = tick_inner_major;
+        if(scale->label_enabled && label_inner < inner_r) inner_r = label_inner;
+    }
+    else {
+        /* ROUND_OUTER: visible content generally starts at/near the arc and expands outward */
+        int32_t main_outer_width = LV_MAX(main_line_width, main_arc_width);
+        inner_r = scale->cached_arc_r - main_outer_width - LV_MAX(major_radial_ofs, minor_radial_ofs);
+    }
+
+    inner_r -= safety;
+
+    if(inner_r < 0) inner_r = 0;
+    return inner_r;
+}
+
 static bool area_fully_inside_circle(const lv_area_t * a, const lv_point_t * c, int32_t r)
 {
     if(r <= 0) return false;
@@ -988,22 +1039,10 @@ static bool scale_clip_hits_visible_content(lv_obj_t * obj, lv_event_t * event)
 
     scale_ensure_tick_geom_cache(obj);
 
-    int32_t major_tick_len = lv_obj_get_style_length(obj, LV_PART_INDICATOR);
-    int32_t main_line_width = lv_obj_get_style_line_width(obj, LV_PART_MAIN);
+    int32_t empty_r = scale_get_inner_visible_radius(obj);
 
-    int32_t empty_r;
-
-    if(scale->mode == LV_SCALE_MODE_ROUND_INNER) {
-        empty_r = scale->cached_arc_r - major_tick_len;
-    }
-    else {
-        int32_t inward_guard = LV_MAX(main_line_width, 2) + 2;
-        empty_r = scale->cached_arc_r - inward_guard;
-    }
-
-    if(empty_r <= 0) return true;
-
-    if(area_fully_inside_circle(clip, &scale->cached_center, empty_r)) {
+    /* If clip is wholly in the truly empty center, skip drawing */
+    if(empty_r > 0 && area_fully_inside_circle(clip, &scale->cached_center, empty_r)) {
         return false;
     }
 
@@ -1026,7 +1065,9 @@ static int32_t scale_get_computed_ext_draw(lv_obj_t * obj)
     int32_t label_gap = LV_SCALE_DEFAULT_LABEL_GAP;
     int32_t ext = main_line_width + LV_MAX(major_tick_len, minor_tick_len);
 
-    if(scale->label_enabled) ext += label_gap + font_h;
+    if(scale->label_enabled) {
+    ext += label_gap + font_h + lv_obj_get_style_text_letter_space(obj, LV_PART_INDICATOR) + 4;
+}
 
     ext += 4;
 

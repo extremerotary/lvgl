@@ -181,6 +181,8 @@ void lv_scale_set_line_needle_value_f(lv_obj_t * obj,
  */
 void lv_scale_set_image_needle_value(lv_obj_t * obj, lv_obj_t * needle_img, int32_t value);
 
+void lv_scale_set_image_needle_value_f(lv_obj_t * obj, lv_obj_t * needle_img, float value_f);
+
 /**
  * Set custom text source for major ticks labels.
  * @param obj       pointer to Scale Widget

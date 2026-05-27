@@ -607,6 +607,28 @@ void lv_scale_set_image_needle_value(lv_obj_t * obj, lv_obj_t * needle_img, int3
     lv_image_set_rotation(needle_img, (scale->rotation + angle) * 10);
 }
 
+void lv_scale_set_image_needle_value_f(lv_obj_t * obj, lv_obj_t * needle_img, float value_f)
+{
+    LV_ASSERT_OBJ(obj, MY_CLASS);
+    lv_scale_t * scale = (lv_scale_t *)obj;
+    if((scale->mode != LV_SCALE_MODE_ROUND_INNER) &&
+       (scale->mode != LV_SCALE_MODE_ROUND_OUTER)) {
+        return;
+    }
+
+    const float rmin = (float)scale->range_min;
+    const float rmax = (float)scale->range_max;
+    const float span = rmax - rmin;
+
+    float angle = 0.0f;
+    if(span > 0.0f) {
+        float v = clampf(value_f, rmin, rmax);
+        angle = ((v - rmin) / span) * (float)scale->angle_range;
+    }
+
+    lv_image_set_rotation(needle_img, (int32_t)lroundf(((float)scale->rotation + angle) * 10.0f));
+}
+
 void lv_scale_set_text_src(lv_obj_t * obj, const char * txt_src[])
 {
     LV_ASSERT_OBJ(obj, MY_CLASS);
